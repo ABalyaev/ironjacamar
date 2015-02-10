@@ -20,12 +20,18 @@
  */
 package org.ironjacamar.common.metadata.ds;
 
+import org.ironjacamar.common.api.metadata.common.Extension;
+import org.ironjacamar.common.api.metadata.ds.DataSource;
 import org.ironjacamar.common.api.metadata.ds.DataSources;
+import org.ironjacamar.common.api.metadata.ds.DsPool;
+import org.ironjacamar.common.api.metadata.ds.XaDataSource;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringWriter;
+import java.util.List;
+import java.util.Map;
 
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLOutputFactory;
@@ -36,6 +42,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
 
 /**
  * Expression tests
@@ -47,7 +54,7 @@ public class ExpressionTestCase
     * Write
     * @throws Exception In case of an error
     */
-   @Test
+//   @Test
    public void testWrite() throws Exception
    {
       DsParser parser = new DsParser();
@@ -94,4 +101,104 @@ public class ExpressionTestCase
 
       assertEquals(sb.toString(), sw.toString());
    }
+   
+   /**
+    * Write
+    * @throws Exception In case of an error
+    */
+   @Test
+   public void testExpressionParsing() throws Exception
+   {
+      System.setProperty("Property1", "Value1");
+      System.setProperty("connection-type", "jdbc2");
+      System.setProperty("DBCloseDelay", "100");
+      System.setProperty("url-delimiter", ":");
+      System.setProperty("user-name", "DBUser");
+      System.setProperty("password2", "sa2");
+      System.setProperty("min-pool-size", "3");
+      System.setProperty("background-validation", "false");
+      
+      try
+      {
+         DsParser parser = new DsParser();
+   
+         InputStream is = DataSources10TestCase.class.getClassLoader().
+            getResourceAsStream("../../resources/test/ds/expression.xml");
+         assertNotNull(is);
+   
+         XMLStreamReader xsr = XMLInputFactory.newInstance().createXMLStreamReader(is);
+   
+         DataSources ds = parser.parse(xsr);
+         assertNotNull(ds);
+         
+         List<DataSource> listDs = ds.getDataSource();
+         assertEquals(1, listDs.size());
+   
+         DataSource d = listDs.get(0);
+         Map<String, String> properties = d.getConnectionProperties();
+         assertEquals(2, properties.size()); 
+   
+         assertEquals("Value1", properties.get("name1"));
+         assertEquals("Property2", properties.get("name2"));
+         
+         // A complex expression with set properties
+         assertEquals("jdbc2:h2:mem:test;DB_CLOSE_DELAY=100", d.getConnectionUrl());
+
+         // A complex expression without properties
+         assertEquals("org.hsqldb.jdbcDriver", d.getDriverClass());
+         
+         List<XaDataSource> listXADs = ds.getXaDataSource();
+         assertEquals(1, listXADs.size());
+         XaDataSource dxa = listXADs.get(0);
+         
+         // An expression without a default value       
+         assertEquals("", dxa.getUrlProperty());
+
+         // An expression without a default value. Property is set.       
+         assertEquals(":", dxa.getUrlDelimiter());
+         
+         // Test a complex expression without a default value
+         DsPool pool = d.getPool();
+         assertEquals("AllConnections", pool.getFlushStrategy().toString());
+         
+         // Test with empty default value
+         assertEquals("", dxa.getUrlProperty());
+         
+         // Test an incorrect expression
+         assertEquals("${security-domain:HsqlDbRealm", dxa.getSecurity().getSecurityDomain());
+         
+         
+         Extension ext = dxa.getSecurity().getReauthPlugin();
+         // Test nested expressions
+         assertEquals("someClass1", ext.getClassName());
+
+         // Test nested expressions with some properties set
+         assertEquals("DBUser", d.getSecurity().getUserName());
+         
+         // Test nested expressions with some properties set
+         assertEquals("sa2", d.getSecurity().getPassword());
+         
+         // integer property with property set
+         assertSame(3,  pool.getMinPoolSize());
+
+         // boolean property with property set
+         assertSame(false,  d.getValidation().isBackgroundValidation());
+        
+      }
+      catch (Exception e)
+      {
+         throw e;
+      }
+      finally
+      {
+         System.clearProperty("Property1");
+         System.clearProperty("connection-type");
+         System.clearProperty("DBCloseDelay");
+         System.clearProperty("url-delimiter");
+         System.clearProperty("user-name");
+         System.clearProperty("min-pool-size");
+         System.clearProperty("background-validation");
+      }
+      
+   }   
 }
